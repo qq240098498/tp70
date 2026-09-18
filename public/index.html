@@ -55,6 +55,41 @@
       </form>
     </section>
 
+    <section class="panel" id="fallback-panel">
+      <div class="panel-head">
+        <h2>取值顺序与生效预览</h2>
+        <div class="panel-tip">排在前面的语言优先取用，第一条已填的译文就是这条文案最终生效的文本；这条顺序只管取用哪份译文，不改变语言区里语言本身的展示次序</div>
+      </div>
+      <div class="fallback-layout">
+        <div class="fallback-order-box">
+          <h3 class="fallback-title">取用先后</h3>
+          <ol class="fallback-list" id="fallback-order-list"></ol>
+          <div class="fallback-detached">
+            <h4 class="fallback-subtitle">已摘下（不参与取用）</h4>
+            <ul class="fallback-list detached" id="fallback-detached-list"></ul>
+            <p class="empty-tip hidden" id="fallback-detached-empty">登记的语言目前都在顺序上</p>
+          </div>
+        </div>
+        <div class="fallback-preview">
+          <h3 class="fallback-title">生效预览：每条文案最终用上的文本</h3>
+          <div class="table-wrap">
+            <table class="grid fallback-grid">
+              <thead>
+                <tr>
+                  <th>模块</th>
+                  <th>文案键</th>
+                  <th>取自</th>
+                  <th>生效文本</th>
+                </tr>
+              </thead>
+              <tbody id="fallback-preview-body"></tbody>
+            </table>
+          </div>
+          <p class="empty-tip hidden" id="fallback-preview-empty">还没有文案，先到文案区新建一条</p>
+        </div>
+      </div>
+    </section>
+
     <section class="panel">
       <div class="panel-head">
         <h2>文案</h2>

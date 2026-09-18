@@ -123,6 +123,61 @@ function listEntries(options) {
   return { entries: sortEntries(list), modules };
 }
 
+// 按取值顺序判断一条文案最终会用上哪份译文：取顺序上第一个填了非空文本的语言。
+// 顺序上一份都没有时明确给出“无可用译文”，默认语言虽然不能摘下，但它自己也可能还没填
+function resolveEffective(entry, order, languages) {
+  const byCode = new Map(languages.map((item) => [item.code, item]));
+  for (const code of order) {
+    const value = entry.translations[code];
+    if (typeof value === 'string' && value.trim()) {
+      const lang = byCode.get(code);
+      return {
+        code,
+        name: lang ? lang.name : code,
+        enabled: lang ? lang.enabled : true,
+        isDefault: lang ? lang.isDefault : false,
+        value,
+      };
+    }
+  }
+  return null;
+}
+
+// 生效预览：把取值顺序与每条文案的解析结果一起返回，页面据此回答“最终用上哪一份文本”
+function previewFallback() {
+  const data = load();
+  const byCode = new Map(data.languages.map((item) => [item.code, item]));
+  const order = data.fallbackOrder
+    .map((code) => {
+      const lang = byCode.get(code);
+      return lang ? { code: lang.code, name: lang.name, enabled: lang.enabled, isDefault: lang.isDefault } : null;
+    })
+    .filter(Boolean);
+  const orderedCodes = new Set(order.map((item) => item.code));
+  const detached = data.languages
+    .filter((item) => !orderedCodes.has(item.code))
+    .map((item) => ({ code: item.code, name: item.name, enabled: item.enabled, isDefault: item.isDefault }));
+
+  const items = sortEntries(data.entries).map((entry) => {
+    const effective = resolveEffective(entry, data.fallbackOrder, data.languages);
+    return {
+      id: entry.id,
+      module: entry.module,
+      key: entry.key,
+      effective: effective
+        ? {
+            code: effective.code,
+            name: effective.name,
+            enabled: effective.enabled,
+            isDefault: effective.isDefault,
+            value: effective.value,
+          }
+        : null,
+    };
+  });
+  return { order, detached, entries: items };
+}
+
 function getEntry(id) {
   const data = load();
   const found = data.entries.find((item) => item.id === id);
@@ -196,6 +251,8 @@ module.exports = {
   createEntry,
   updateEntry,
   deleteEntry,
+  previewFallback,
+  resolveEffective,
   validateModule,
   validateKey,
   validateTranslations,

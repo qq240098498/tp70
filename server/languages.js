@@ -25,6 +25,63 @@ function listLanguages() {
   return data.languages.map((item) => ({ ...item, filled: counts[item.code] || 0 }));
 }
 
+// 只对外暴露语言上的固定字段，顺序里与已摘下的两栏都用同一份精简结构
+function toOrderItem(item) {
+  return { code: item.code, name: item.name, enabled: item.enabled, isDefault: item.isDefault };
+}
+
+// 取值顺序：在顺序上的语言按先后返回，已登记但被摘下的语言放到 detached 里
+function getFallbackOrder() {
+  const data = load();
+  const byCode = new Map(data.languages.map((item) => [item.code, item]));
+  const ordered = data.fallbackOrder
+    .map((code) => byCode.get(code))
+    .filter(Boolean)
+    .map(toOrderItem);
+  const orderedCodes = new Set(ordered.map((item) => item.code));
+  const detached = data.languages
+    .filter((item) => !orderedCodes.has(item.code))
+    .map(toOrderItem);
+  return { order: ordered, detached };
+}
+
+// 整段替换取值顺序：每一种都必须登记过、不能重复，默认语言必须始终留在顺序上
+function updateFallbackOrder(payload) {
+  const data = load();
+  const rawCodes = payload && payload.order;
+  if (!Array.isArray(rawCodes)) {
+    throw new ApiError(400, 'FALLBACK_ORDER_REQUIRED', '请按顺序给出语言代码列表', 'order');
+  }
+
+  const byLower = new Map(data.languages.map((item) => [item.code.toLowerCase(), item]));
+  const next = [];
+  const seen = new Set();
+  rawCodes.forEach((value, index) => {
+    const code = pickText(value);
+    if (!code) {
+      throw new ApiError(400, 'FALLBACK_CODE_REQUIRED', `取值顺序第 ${index + 1} 项缺少语言代码`, 'order');
+    }
+    const found = byLower.get(code.toLowerCase());
+    if (!found) {
+      throw new ApiError(400, 'FALLBACK_LANGUAGE_UNKNOWN', `语言 ${code} 没有登记过，不能放进取值顺序`, 'order');
+    }
+    if (seen.has(found.code.toLowerCase())) {
+      throw new ApiError(400, 'FALLBACK_DUPLICATED', `语言 ${found.code} 在取值顺序里出现了两次，同一种语言只能排一次`, 'order');
+    }
+    seen.add(found.code.toLowerCase());
+    next.push(found.code);
+  });
+
+  const defaultLang = data.languages.find((item) => item.isDefault);
+  if (defaultLang && !seen.has(defaultLang.code.toLowerCase())) {
+    throw new ApiError(409, 'FALLBACK_DEFAULT_REQUIRED', `${defaultLang.code} 是默认语言，默认语言必须始终留在取值顺序上，不能摘下`, 'order');
+  }
+
+  data.fallbackOrder = next;
+  save(data);
+  return getFallbackOrder();
+}
+
 // 按代码找到语言，允许大小写不一致的写法，找不到时给出明确结论
 function findLanguage(data, code) {
   const value = pickText(code);
@@ -78,6 +135,8 @@ function createLanguage(payload) {
   const created = { code, name, enabled, isDefault, createdAt: new Date().toISOString() };
   data.languages.push(created);
   if (isDefault) clearOtherDefaults(data.languages, code);
+  // 新登记的语言先排到顺序末尾，不会立刻盖过已有语言，需要优先时再手动前移
+  data.fallbackOrder = data.fallbackOrder.concat(code);
   save(data);
   return created;
 }
@@ -101,7 +160,13 @@ function updateLanguage(code, payload) {
   found.name = nextName;
   found.enabled = nextEnabled;
   found.isDefault = nextIsDefault;
-  if (nextIsDefault) clearOtherDefaults(data.languages, found.code);
+  if (nextIsDefault) {
+    clearOtherDefaults(data.languages, found.code);
+    // 被摘下的语言一旦成为默认语言就得回到顺序上，排在末尾充当最后兜底，不抢占已有优先级
+    if (!data.fallbackOrder.some((code) => code.toLowerCase() === found.code.toLowerCase())) {
+      data.fallbackOrder = data.fallbackOrder.concat(found.code);
+    }
+  }
   save(data);
   return found;
 }
@@ -124,6 +189,8 @@ function deleteLanguage(code) {
   }
 
   data.languages = data.languages.filter((item) => item.code !== found.code);
+  // 语言删除后顺手从取值顺序上摘掉，默认语言不允许删除，所以不会动到顺序上的保底项
+  data.fallbackOrder = data.fallbackOrder.filter((code) => code !== found.code);
   data.entries = data.entries.map((item) => {
     if (!Object.prototype.hasOwnProperty.call(item.translations, found.code)) return item;
     const kept = { ...item.translations };
@@ -136,6 +203,8 @@ function deleteLanguage(code) {
 
 module.exports = {
   listLanguages,
+  getFallbackOrder,
+  updateFallbackOrder,
   findLanguage,
   createLanguage,
   updateLanguage,

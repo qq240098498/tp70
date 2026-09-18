@@ -20,6 +20,8 @@ function seedData() {
       { code: 'en-US', name: '英语（美国）', enabled: true, isDefault: false, createdAt: '2026-09-05T01:10:00.000Z' },
       { code: 'ja-JP', name: '日语', enabled: false, isDefault: false, createdAt: '2026-09-05T01:15:00.000Z' },
     ],
+    // 取值顺序默认按登记次序排，第一条已填的译文就是这条文案最终取用的文本
+    fallbackOrder: ['zh-CN', 'zh-TW', 'en-US', 'ja-JP'],
     entries: [
       {
         id: 'entry-1001',
@@ -268,6 +270,40 @@ function normalizeEntry(item, fallbackIndex) {
   };
 }
 
+// 取值顺序只存语言代码。旧数据没有这一段时按登记次序初始化；已有这一段时逐个对照
+// 在册语言，去掉非字符串、已经删除的语言与重复项（忽略大小写），最后保证默认语言一定在顺序上
+function normalizeFallbackOrder(raw, languages) {
+  const byLower = new Map();
+  languages.forEach((item) => byLower.set(item.code.toLowerCase(), item.code));
+
+  let rawCodes;
+  if (Array.isArray(raw)) {
+    rawCodes = raw;
+  } else if (languages.length === 0) {
+    return [];
+  } else {
+    // 旧版本数据没有取值顺序，第一次载入时按语言登记次序补上
+    rawCodes = languages.map((item) => item.code);
+  }
+
+  const seen = new Set();
+  const order = [];
+  rawCodes.forEach((value) => {
+    if (typeof value !== 'string') return;
+    const actual = byLower.get(value.trim().toLowerCase());
+    if (!actual || seen.has(actual.toLowerCase())) return;
+    seen.add(actual.toLowerCase());
+    order.push(actual);
+  });
+
+  // 默认语言必须始终留在顺序上；数据文件被手工改坏时把它挪回最前面托底
+  const defaultLang = languages.find((item) => item.isDefault);
+  if (defaultLang && !seen.has(defaultLang.code.toLowerCase())) {
+    order.unshift(defaultLang.code);
+  }
+  return order;
+}
+
 // 整份数据保证 languages 与 entries 结构一致；默认语言有且只有一个
 function normalize(raw) {
   const source = raw && typeof raw === 'object' ? raw : {};
@@ -297,6 +333,8 @@ function normalize(raw) {
     dedupedLanguages[keep].enabled = true;
   }
 
+  const fallbackOrder = normalizeFallbackOrder(source.fallbackOrder, dedupedLanguages);
+
   const known = new Set(dedupedLanguages.map((item) => item.code));
   const entries = Array.isArray(source.entries)
     ? source.entries
@@ -311,7 +349,7 @@ function normalize(raw) {
         })
     : [];
 
-  return { languages: dedupedLanguages, entries };
+  return { languages: dedupedLanguages, fallbackOrder, entries };
 }
 
 // 读取数据文件：文件缺失或内容损坏时回落到初始数据并立刻补写
@@ -341,6 +379,7 @@ module.exports = {
   normalize,
   normalizeLanguage,
   normalizeEntry,
+  normalizeFallbackOrder,
   MAX_TRANSLATION_LENGTH,
   MAX_NOTE_LENGTH,
   MAX_OPERATOR_LENGTH,

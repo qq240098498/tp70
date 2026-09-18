@@ -4,6 +4,7 @@ const state = {
   languages: [],
   entries: [],
   modules: [],
+  fallback: { order: [], detached: [], entries: [] },
   editingId: '',
 };
 
@@ -115,6 +116,88 @@ async function loadEntries() {
   state.modules = payload.modules || [];
   renderModules();
   renderEntries();
+}
+
+// 取值顺序与生效预览是同一份接口结果：顺序清单、摘下清单、每条文案最终取到的文本
+async function loadFallback() {
+  const payload = await request('/api/fallback-preview');
+  state.fallback = {
+    order: payload.order || [],
+    detached: payload.detached || [],
+    entries: payload.entries || [],
+  };
+  renderFallback();
+}
+
+function fallbackTags(item) {
+  const tags = [];
+  if (item.isDefault) tags.push('<span class="tag on">默认</span>');
+  if (!item.enabled) tags.push('<span class="tag off">已停用</span>');
+  return tags.join('');
+}
+
+// 一行语言：位置序号、名称代码、状态标签与上移/下移/摘下操作。
+// 默认语言也给出摘下入口，点击时当场拒绝并说明原因，服务端同样会再拦一次
+function fallbackRow(item, index, total) {
+  const code = escapeHtml(item.code);
+  const actions = [];
+  if (index > 0) actions.push(`<button type="button" class="link" data-fallback-up="${code}">上移</button>`);
+  if (index < total - 1) actions.push(`<button type="button" class="link" data-fallback-down="${code}">下移</button>`);
+  actions.push(`<button type="button" class="link danger" data-fallback-detach="${code}">摘下</button>`);
+  return `<li class="fallback-item${item.enabled ? '' : ' muted'}" data-fallback-code="${code}">
+    <span class="fallback-index">${index + 1}</span>
+    <span class="fallback-name">
+      <span class="fallback-lang">${escapeHtml(item.name)}</span>
+      <span class="mono fallback-code">${code}</span>
+      ${fallbackTags(item)}
+    </span>
+    <span class="actions">${actions.join('')}</span>
+  </li>`;
+}
+
+function renderFallback() {
+  const { order, detached, entries } = state.fallback;
+
+  const orderBody = el('fallback-order-list');
+  orderBody.innerHTML = order.map((item, index) => fallbackRow(item, index, order.length)).join('');
+
+  const detachedBody = el('fallback-detached-list');
+  detachedBody.innerHTML = detached.map((item) => {
+    const code = escapeHtml(item.code);
+    return `<li class="fallback-item detached-item${item.enabled ? '' : ' muted'}">
+      <span class="fallback-index">—</span>
+      <span class="fallback-name">
+        <span class="fallback-lang">${escapeHtml(item.name)}</span>
+        <span class="mono fallback-code">${code}</span>
+        ${fallbackTags(item)}
+      </span>
+      <span class="actions"><button type="button" class="link" data-fallback-attach="${code}">放回顺序末尾</button></span>
+    </li>`;
+  }).join('');
+  el('fallback-detached-empty').classList.toggle('hidden', detached.length > 0);
+
+  const previewBody = el('fallback-preview-body');
+  previewBody.innerHTML = entries.map((item) => {
+    let taken;
+    if (item.effective) {
+      const tags = [];
+      if (item.effective.isDefault) tags.push('<span class="tag on">默认</span>');
+      if (!item.effective.enabled) tags.push('<span class="tag off">已停用</span>');
+      taken = `<span class="taken-by">${escapeHtml(item.effective.name)} <span class="mono">${escapeHtml(item.effective.code)}</span> ${tags.join('')}</span>`;
+    } else {
+      taken = '<span class="missing">顺序上的语言都还没填</span>';
+    }
+    const valueCell = item.effective
+      ? `<span class="effective-value" title="${escapeHtml(item.effective.value)}">${escapeHtml(item.effective.value)}</span>`
+      : '<span class="missing">无可用译文</span>';
+    return `<tr>
+      <td class="mono">${escapeHtml(item.module)}</td>
+      <td class="mono">${escapeHtml(item.key)}</td>
+      <td>${taken}</td>
+      <td class="effective-cell">${valueCell}</td>
+    </tr>`;
+  }).join('');
+  el('fallback-preview-empty').classList.toggle('hidden', entries.length > 0);
 }
 
 function renderModules() {
@@ -240,6 +323,7 @@ async function submitLanguage(event) {
     notify('语言已新增', 'ok');
     await loadLanguages();
     await loadEntries();
+    await loadFallback();
   } catch (err) {
     notify(err.message, 'error');
     markField(err.field);
@@ -269,6 +353,7 @@ async function submitEntry(event) {
     closeEntryForm();
     await loadEntries();
     await loadLanguages();
+    await loadFallback();
   } catch (err) {
     notify(err.message, 'error');
     markField(err.field);
@@ -305,6 +390,7 @@ document.addEventListener('click', async (event) => {
       }
       await loadLanguages();
       await loadEntries();
+      await loadFallback();
     } catch (err) {
       notify(err.message, 'error');
     }
@@ -328,6 +414,7 @@ document.addEventListener('click', async (event) => {
       notify('文案已删除', 'ok');
       await loadEntries();
       await loadLanguages();
+      await loadFallback();
     } catch (err) {
       notify(err.message, 'error');
     }
@@ -336,6 +423,55 @@ document.addEventListener('click', async (event) => {
 
 el('language-form').addEventListener('submit', submitLanguage);
 el('entry-form').addEventListener('submit', submitEntry);
+
+// 上移、下移、摘下、放回都是在前端拼好新顺序后整段提交，服务端负责兜底校验
+function currentOrderCodes() {
+  return state.fallback.order.map((item) => item.code);
+}
+
+async function saveFallbackOrder(codes, successMessage) {
+  clearNotice();
+  try {
+    await request('/api/fallback-order', { method: 'PATCH', body: JSON.stringify({ order: codes }) });
+    notify(successMessage, 'ok');
+    await loadFallback();
+  } catch (err) {
+    notify(err.message, 'error');
+  }
+}
+
+document.addEventListener('click', (event) => {
+  const node = event.target.closest('button');
+  if (!node) return;
+  const data = node.dataset;
+  const codes = currentOrderCodes();
+
+  if (data.fallbackUp) {
+    const code = data.fallbackUp;
+    const index = codes.indexOf(code);
+    if (index <= 0) return;
+    [codes[index - 1], codes[index]] = [codes[index], codes[index - 1]];
+    saveFallbackOrder(codes, `已把 ${code} 上移一位`);
+  } else if (data.fallbackDown) {
+    const code = data.fallbackDown;
+    const index = codes.indexOf(code);
+    if (index === -1 || index === codes.length - 1) return;
+    [codes[index + 1], codes[index]] = [codes[index], codes[index + 1]];
+    saveFallbackOrder(codes, `已把 ${code} 下移一位`);
+  } else if (data.fallbackDetach) {
+    const code = data.fallbackDetach;
+    const target = state.fallback.order.find((item) => item.code === code);
+    // 正常情况下默认语言这一行不渲染摘下按钮，这里再当面拦一次并说明原因
+    if (target && target.isDefault) {
+      notify(`${code} 是默认语言，默认语言必须始终留在取值顺序上，不能摘下`, 'error');
+      return;
+    }
+    saveFallbackOrder(codes.filter((item) => item !== code), `已把 ${code} 从取值顺序上摘下`);
+  } else if (data.fallbackAttach) {
+    const code = data.fallbackAttach;
+    saveFallbackOrder(codes.concat(code), `已把 ${code} 放回取值顺序末尾`);
+  }
+});
 el('entry-new').addEventListener('click', () => {
   clearNotice();
   openEntryForm(null);
@@ -354,6 +490,7 @@ el('entry-refresh').addEventListener('click', () => {
   clearNotice();
   loadLanguages()
     .then(loadEntries)
+    .then(loadFallback)
     .catch((err) => notify(err.message, 'error'));
 });
 el('filter-module').addEventListener('change', () => {
@@ -363,9 +500,10 @@ el('operator').addEventListener('change', () => {
   window.localStorage.setItem(OPERATOR_KEY, currentOperator());
 });
 
-// 页面打开时先把语言与文案拉一遍，语言决定文案表格里有哪些列
+// 页面打开时先把语言与文案拉一遍，语言决定文案表格里有哪些列，最后再算取值顺序与生效预览
 restoreOperator();
 loadHealth();
 loadLanguages()
   .then(loadEntries)
+  .then(loadFallback)
   .catch((err) => notify(err.message, 'error'));

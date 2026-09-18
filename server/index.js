@@ -41,6 +41,20 @@ app.delete('/api/languages/:code', (req, res) => {
   }
 });
 
+// 取值顺序与生效预览：顺序上的语言、被摘下的语言、每条文案按顺序最终取用的文本
+app.get('/api/fallback-preview', (_req, res) => {
+  res.json(api.previewFallback());
+});
+
+// 整段替换取值顺序：上移、下移、摘下、放回都由前端拼好新顺序后提交
+app.patch('/api/fallback-order', (req, res) => {
+  try {
+    res.json(api.updateFallbackOrder(req.body));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
 // 文案列表：按模块与关键词筛选，返回值里带上各模块的条数，页面据此刷新筛选下拉
 app.get('/api/entries', (req, res) => {
   const result = api.listEntries({

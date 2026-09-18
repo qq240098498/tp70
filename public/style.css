@@ -376,3 +376,140 @@ label.full input {
   display: flex;
   gap: 10px;
 }
+
+/* 取值顺序与生效预览：左栏排顺序，右栏看每条文案最终取到的文本 */
+.fallback-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.fallback-order-box,
+.fallback-preview {
+  min-width: 0;
+}
+
+.fallback-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fallback-subtitle {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.fallback-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fallback-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.fallback-item.muted {
+  background: #fbfcfd;
+  color: var(--ink-soft);
+}
+
+ol.fallback-list .fallback-item {
+  border-left: 3px solid var(--accent);
+}
+
+.fallback-detached {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+
+.fallback-list.detached .fallback-item {
+  border-left: 3px solid var(--line);
+  background: #fafbfc;
+}
+
+.fallback-index {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fallback-list.detached .fallback-index {
+  background: #eef0f3;
+  color: var(--ink-soft);
+}
+
+.fallback-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fallback-lang {
+  font-weight: 600;
+}
+
+.fallback-code {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.fallback-item .actions {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+table.fallback-grid {
+  min-width: 0;
+}
+
+table.fallback-grid td {
+  max-width: none;
+}
+
+td.effective-cell {
+  min-width: 200px;
+}
+
+.effective-value {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taken-by {
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .fallback-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
