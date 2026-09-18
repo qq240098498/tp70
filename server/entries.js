@@ -120,7 +120,18 @@ function listEntries(options) {
   });
   const modules = Object.keys(counts).sort().map((name) => ({ module: name, count: counts[name] }));
 
-  return { entries: sortEntries(list), modules };
+  // 生效预览：按取用顺序解析每条文案最终用上哪一份译文，与各语言列并排返回，顺序本身不变
+  const activeOrder = (data.fallbackOrder && data.fallbackOrder.active) || [];
+  const sorted = sortEntries(list);
+  const resolved = {};
+  sorted.forEach((item) => {
+    const picked = activeOrder
+      .map((code) => ({ code, value: item.translations[code] }))
+      .find((candidate) => typeof candidate.value === 'string' && candidate.value.trim());
+    resolved[item.id] = picked ? { code: picked.code, text: picked.value } : null;
+  });
+
+  return { entries: sorted, modules, resolved };
 }
 
 function getEntry(id) {

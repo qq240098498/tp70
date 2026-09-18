@@ -376,3 +376,105 @@ label.full input {
   display: flex;
   gap: 10px;
 }
+
+/* 取值顺序与生效预览 */
+.fallback-layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.fallback-col {
+  flex: 1 1 360px;
+  min-width: 0;
+}
+
+h3.subhead {
+  margin: 4px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.sub-tip {
+  font-weight: 400;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+ol.order-list,
+ul.order-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.order-list:empty {
+  display: none;
+}
+
+li.order-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+li.order-item:last-child {
+  border-bottom: none;
+}
+
+li.order-item.benched {
+  background: #fbfcfd;
+  color: var(--ink-soft);
+}
+
+.order-rank {
+  width: 18px;
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.order-lang {
+  flex-shrink: 0;
+}
+
+.order-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-tags {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.order-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.preview-grid {
+  min-width: 560px;
+}
+
+.preview-grid td:nth-child(4) {
+  max-width: 320px;
+}
+
+.preview-grid .tag {
+  margin-left: 6px;
+}

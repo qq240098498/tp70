@@ -229,6 +229,11 @@ function seedData() {
         updatedAt: '2026-09-12T03:25:00.000Z',
       },
     ],
+    // 取用顺序：active 从前到后优先取用，inactive 是临时摘下的语言。默认初始按登记次序排
+    fallbackOrder: {
+      active: ['zh-CN', 'zh-TW', 'en-US', 'ja-JP'],
+      inactive: [],
+    },
   };
 }
 
@@ -266,6 +271,54 @@ function normalizeEntry(item, fallbackIndex) {
     createdAt,
     updatedAt: typeof source.updatedAt === 'string' && source.updatedAt ? source.updatedAt : createdAt,
   };
+}
+
+// 把取用顺序整理成 active/inactive 两份：只认登记过的代码、去重、补齐新登记的语言，
+// 并保证默认语言始终留在顺序上。数据文件被手工改动或旧版本没有这一段时也能自愈
+function normalizeFallbackOrder(raw, languages) {
+  const codes = languages.map((item) => item.code);
+  const lowerToCode = new Map(codes.map((code) => [code.toLowerCase(), code]));
+  const defaultLanguage = languages.find((item) => item.isDefault);
+  const defaultCode = defaultLanguage ? defaultLanguage.code : codes[0];
+
+  const pick = (value) => {
+    if (!Array.isArray(value)) return [];
+    const picked = [];
+    const seen = new Set();
+    value.forEach((item) => {
+      if (typeof item !== 'string') return;
+      const actual = lowerToCode.get(item.trim().toLowerCase());
+      if (!actual || seen.has(actual.toLowerCase())) return;
+      seen.add(actual.toLowerCase());
+      picked.push(actual);
+    });
+    return picked;
+  };
+
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const active = pick(source.active);
+  const inactive = pick(source.inactive)
+    .filter((code) => !active.some((item) => item.toLowerCase() === code.toLowerCase()));
+
+  // 默认语言不允许离开顺序：若被手工写进了 inactive，取出来补到 active 末尾
+  if (defaultCode) {
+    const inActive = active.some((code) => code.toLowerCase() === defaultCode.toLowerCase());
+    if (!inActive) {
+      for (let i = inactive.length - 1; i >= 0; i -= 1) {
+        if (inactive[i].toLowerCase() === defaultCode.toLowerCase()) inactive.splice(i, 1);
+      }
+      active.push(defaultCode);
+    }
+  }
+
+  // 两份里都没出现的语言（新增后还没排过）按语言区的登记次序补到 active 末尾
+  codes.forEach((code) => {
+    const placed = active.some((item) => item.toLowerCase() === code.toLowerCase())
+      || inactive.some((item) => item.toLowerCase() === code.toLowerCase());
+    if (!placed) active.push(code);
+  });
+
+  return { active, inactive };
 }
 
 // 整份数据保证 languages 与 entries 结构一致；默认语言有且只有一个
@@ -311,7 +364,9 @@ function normalize(raw) {
         })
     : [];
 
-  return { languages: dedupedLanguages, entries };
+  const fallbackOrder = normalizeFallbackOrder(source.fallbackOrder, dedupedLanguages);
+
+  return { languages: dedupedLanguages, entries, fallbackOrder };
 }
 
 // 读取数据文件：文件缺失或内容损坏时回落到初始数据并立刻补写

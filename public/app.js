@@ -4,6 +4,8 @@ const state = {
   languages: [],
   entries: [],
   modules: [],
+  resolved: {},
+  fallback: { active: [], inactive: [], defaultCode: '' },
   editingId: '',
 };
 
@@ -103,6 +105,16 @@ async function loadLanguages() {
   renderTranslationInputs();
 }
 
+async function loadFallbackOrder() {
+  const payload = await request('/api/fallback-order');
+  state.fallback = {
+    active: payload.active || [],
+    inactive: payload.inactive || [],
+    defaultCode: payload.defaultCode || '',
+  };
+  renderFallbackOrder();
+}
+
 async function loadEntries() {
   const params = new URLSearchParams();
   const module = el('filter-module').value;
@@ -113,8 +125,10 @@ async function loadEntries() {
   const payload = await request(`/api/entries${query ? `?${query}` : ''}`);
   state.entries = payload.entries || [];
   state.modules = payload.modules || [];
+  state.resolved = payload.resolved || {};
   renderModules();
   renderEntries();
+  renderPreview();
 }
 
 function renderModules() {
@@ -148,6 +162,97 @@ function renderLanguages() {
   });
   body.innerHTML = rows.join('');
   el('language-empty').classList.toggle('hidden', state.languages.length > 0);
+}
+
+function findLanguage(code) {
+  return state.languages.find((item) => item.code === code);
+}
+
+// 取用顺序：active 一段从上到下优先取用，inactive 一段放临时摘下的语言
+function renderFallbackOrder() {
+  const activeBox = el('fallback-active');
+  const inactiveBox = el('fallback-inactive');
+  const { active, inactive, defaultCode } = state.fallback;
+
+  activeBox.innerHTML = active.map((code, index) => {
+    const lang = findLanguage(code);
+    const tags = [
+      code === defaultCode ? '<span class="tag on">默认</span>' : '',
+      lang && !lang.enabled ? '<span class="tag off">已停用</span>' : '',
+    ].join('');
+    const actions = [
+      `<button type="button" class="link" data-order-up="${escapeHtml(code)}"${index === 0 ? ' disabled' : ''}>上移</button>`,
+      `<button type="button" class="link" data-order-down="${escapeHtml(code)}"${index === active.length - 1 ? ' disabled' : ''}>下移</button>`,
+      `<button type="button" class="link" data-order-remove="${escapeHtml(code)}">摘下</button>`,
+    ].join('');
+    return `<li class="order-item">
+      <span class="order-rank">${index + 1}</span>
+      <span class="order-lang mono">${escapeHtml(code)}</span>
+      <span class="order-name">${lang ? escapeHtml(lang.name) : '（未登记）'}</span>
+      <span class="order-tags">${tags}</span>
+      <span class="order-actions">${actions}</span>
+    </li>`;
+  }).join('');
+
+  inactiveBox.innerHTML = inactive.map((code) => {
+    const lang = findLanguage(code);
+    return `<li class="order-item benched">
+      <span class="order-rank">·</span>
+      <span class="order-lang mono">${escapeHtml(code)}</span>
+      <span class="order-name">${lang ? escapeHtml(lang.name) : '（未登记）'}</span>
+      <span class="order-tags"><span class="tag off">已摘下</span></span>
+      <span class="order-actions">
+        <button type="button" class="link" data-order-restore="${escapeHtml(code)}">放回顺序</button>
+      </span>
+    </li>`;
+  }).join('');
+
+  el('fallback-empty').classList.toggle('hidden', state.languages.length > 0);
+}
+
+// 把当前两份顺序整体提交给服务端；被拒绝时按服务端结果重绘，避免页面与数据不一致
+async function saveFallbackOrder(successMessage) {
+  try {
+    const payload = { active: state.fallback.active, inactive: state.fallback.inactive };
+    await request('/api/fallback-order', { method: 'PUT', body: JSON.stringify(payload) });
+    if (successMessage) notify(successMessage, 'ok');
+    renderFallbackOrder();
+    await loadEntries();
+  } catch (err) {
+    notify(err.message, 'error');
+    await loadFallbackOrder();
+  }
+}
+
+async function moveFallbackLanguage(code, direction) {
+  const order = state.fallback.active;
+  const index = order.indexOf(code);
+  const target = index + direction;
+  if (index === -1 || target < 0 || target >= order.length) return;
+  [order[index], order[target]] = [order[target], order[index]];
+  await saveFallbackOrder('取用顺序已调整');
+}
+
+async function removeFallbackLanguage(code) {
+  // 默认语言是所有译文都缺失时的最后兜底，当场拒绝摘下并说明原因
+  if (code === state.fallback.defaultCode) {
+    notify(`默认语言 ${code} 必须始终留在取用顺序上，不能摘下；它是所有译文都缺失时的兜底，请先在语言区把另一种语言设为默认再调整`, 'error');
+    return;
+  }
+  const order = state.fallback.active;
+  const index = order.indexOf(code);
+  if (index === -1) return;
+  order.splice(index, 1);
+  state.fallback.inactive.push(code);
+  await saveFallbackOrder(`已把 ${code} 从取用顺序上摘下`);
+}
+
+async function restoreFallbackLanguage(code) {
+  const index = state.fallback.inactive.indexOf(code);
+  if (index === -1) return;
+  state.fallback.inactive.splice(index, 1);
+  state.fallback.active.push(code);
+  await saveFallbackOrder(`已把 ${code} 放回取用顺序`);
 }
 
 // 新建文案的表单按当前登记的语言逐条生成译文输入框，停用的语言照样可以查看与补填
@@ -204,6 +309,30 @@ function renderEntries() {
   el('entry-empty').classList.toggle('hidden', state.entries.length > 0);
 }
 
+// 生效预览：直接用服务端按取用顺序解析好的结果，告诉使用者每条文案最终用上哪一份文本
+function renderPreview() {
+  const body = el('preview-body');
+  body.innerHTML = state.entries.map((item) => {
+    const picked = state.resolved[item.id];
+    if (!picked) {
+      return `<tr>
+        <td class="mono">${escapeHtml(item.module)}</td>
+        <td class="mono">${escapeHtml(item.key)}</td>
+        <td class="missing">—</td>
+        <td class="missing">取用顺序上的语言都还没有非空译文，没有可生效的文本</td>
+      </tr>`;
+    }
+    const lang = findLanguage(picked.code);
+    return `<tr>
+      <td class="mono">${escapeHtml(item.module)}</td>
+      <td class="mono">${escapeHtml(item.key)}</td>
+      <td class="mono">${escapeHtml(picked.code)}${lang && !lang.enabled ? '<span class="tag off">已停用</span>' : ''}</td>
+      <td title="${escapeHtml(picked.text)}">${escapeHtml(picked.text)}</td>
+    </tr>`;
+  }).join('');
+  el('preview-empty').classList.toggle('hidden', state.entries.length > 0);
+}
+
 function openEntryForm(entry) {
   state.editingId = entry ? entry.id : '';
   el('entry-form-title').textContent = entry ? `编辑文案：${entry.key}` : '新建文案';
@@ -239,6 +368,7 @@ async function submitLanguage(event) {
     el('language-default').checked = false;
     notify('语言已新增', 'ok');
     await loadLanguages();
+    await loadFallbackOrder();
     await loadEntries();
   } catch (err) {
     notify(err.message, 'error');
@@ -280,6 +410,16 @@ document.addEventListener('click', async (event) => {
   const node = event.target.closest('button');
   if (!node) return;
 
+  // 取用顺序区：上移、下移、摘下、放回
+  if (node.dataset.orderUp || node.dataset.orderDown || node.dataset.orderRemove || node.dataset.orderRestore) {
+    clearNotice();
+    if (node.dataset.orderUp) await moveFallbackLanguage(node.dataset.orderUp, -1);
+    else if (node.dataset.orderDown) await moveFallbackLanguage(node.dataset.orderDown, 1);
+    else if (node.dataset.orderRemove) await removeFallbackLanguage(node.dataset.orderRemove);
+    else await restoreFallbackLanguage(node.dataset.orderRestore);
+    return;
+  }
+
   const code = node.dataset.languageDefault || node.dataset.languageToggle
     || node.dataset.languageRename || node.dataset.languageDelete;
   if (code) {
@@ -304,6 +444,7 @@ document.addEventListener('click', async (event) => {
         notify(`${code} 已删除`, 'ok');
       }
       await loadLanguages();
+      await loadFallbackOrder();
       await loadEntries();
     } catch (err) {
       notify(err.message, 'error');
@@ -353,6 +494,7 @@ el('filter-reset').addEventListener('click', () => {
 el('entry-refresh').addEventListener('click', () => {
   clearNotice();
   loadLanguages()
+    .then(loadFallbackOrder)
     .then(loadEntries)
     .catch((err) => notify(err.message, 'error'));
 });
@@ -363,9 +505,10 @@ el('operator').addEventListener('change', () => {
   window.localStorage.setItem(OPERATOR_KEY, currentOperator());
 });
 
-// 页面打开时先把语言与文案拉一遍，语言决定文案表格里有哪些列
+// 页面打开时先把语言、取用顺序与文案拉一遍，语言决定文案表格里有哪些列
 restoreOperator();
 loadHealth();
 loadLanguages()
+  .then(loadFallbackOrder)
   .then(loadEntries)
   .catch((err) => notify(err.message, 'error'));

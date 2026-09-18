@@ -57,6 +57,39 @@
 
     <section class="panel">
       <div class="panel-head">
+        <h2>取值顺序与生效预览</h2>
+        <div class="panel-tip">排在前面的语言优先取用第一份非空译文；这条顺序只决定取用哪一份译文，不改变语言区与文案列表里语言本身的先后</div>
+      </div>
+      <div class="fallback-layout">
+        <div class="fallback-col">
+          <h3 class="subhead">取用顺序</h3>
+          <ol class="order-list" id="fallback-active"></ol>
+          <h3 class="subhead">临时摘下<span class="sub-tip">摘下后不参与取用，随时可以放回去</span></h3>
+          <ul class="order-list order-bench" id="fallback-inactive"></ul>
+          <p class="empty-tip hidden" id="fallback-empty">还没有登记任何语言</p>
+        </div>
+        <div class="fallback-col">
+          <h3 class="subhead">生效预览<span class="sub-tip" id="preview-hint">按当前筛选的文案与上面的取用顺序解析</span></h3>
+          <div class="table-wrap">
+            <table class="grid preview-grid">
+              <thead>
+                <tr>
+                  <th>模块</th>
+                  <th>文案键</th>
+                  <th>取用语言</th>
+                  <th>最终用上的文本</th>
+                </tr>
+              </thead>
+              <tbody id="preview-body"></tbody>
+            </table>
+          </div>
+          <p class="empty-tip hidden" id="preview-empty">当前筛选条件下没有文案</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
         <h2>文案</h2>
         <div class="filters">
           <select id="filter-module"><option value="">全部模块</option></select>

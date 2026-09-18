@@ -237,5 +237,14 @@
       "createdAt": "2026-09-11T06:15:00.000Z",
       "updatedAt": "2026-09-12T03:25:00.000Z"
     }
-  ]
+  ],
+  "fallbackOrder": {
+    "active": [
+      "zh-CN",
+      "zh-TW",
+      "en-US",
+      "ja-JP"
+    ],
+    "inactive": []
+  }
 }
